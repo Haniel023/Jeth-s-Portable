@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "E": "minecraft:ender_eye",
+    "A": "minecraft:amethyst_shard",
+    "S": "minecraft:nether_star"
+  },
+  "pattern": [
+    "EAE",
+    "ASA",
+    "EAE"
+  ],
+  "result": {
+    "id": "jethsportable:nether_star_range_upgrade"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "D": "minecraft:diamond",
+    "E": "minecraft:ender_eye"
+  },
+  "pattern": [
+    " D ",
+    "DED",
+    " D "
+  ],
+  "result": {
+    "id": "jethsportable:diamond_range_upgrade"
+  }
+}

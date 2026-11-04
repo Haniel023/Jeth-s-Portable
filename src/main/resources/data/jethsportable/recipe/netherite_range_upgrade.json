@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "O": "minecraft:crying_obsidian",
+    "B": "minecraft:blaze_rod",
+    "N": "minecraft:netherite_ingot"
+  },
+  "pattern": [
+    "OBO",
+    "BNB",
+    "OBO"
+  ],
+  "result": {
+    "id": "jethsportable:netherite_range_upgrade"
+  }
+}

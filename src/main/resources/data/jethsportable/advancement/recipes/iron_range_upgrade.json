@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_the_recipe": {
+      "conditions": {
+        "recipes": "jethsportable:iron_range_upgrade"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    },
+    "has_item": {
+      "conditions": {
+        "items": [
+          {
+            "items": "jethsportable:portable_core_block"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_item"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "jethsportable:iron_range_upgrade"
+    ]
+  }
+}

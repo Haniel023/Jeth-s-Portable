@@ -1,0 +1,45 @@
+{
+	"schemaVersion": 1,
+	"id": "jethsportable",
+	"version": "${version}",
+	"name": "Jeth's Portable",
+	"description": "Carry a crafting table, turn the chests and furnaces you already have into one network, and reach it all from your inventory. Range upgrades, remote furnaces and batch notifications included.",
+	"authors": [
+		"probablyjeth"
+	],
+	"contact": {
+		"homepage": "https://github.com/Haniel023/Jeth-s-Portable",
+		"sources": "https://github.com/Haniel023/Jeth-s-Portable",
+		"issues": "https://github.com/Haniel023/Jeth-s-Portable/issues"
+	},
+	"license": "MIT",
+	"icon": "assets/jethsportable/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.jethsportable.JethsPortable"
+		],
+		"client": [
+			"com.jethsportable.client.JethsPortableClient"
+		],
+		"modmenu": [
+			"com.jethsportable.client.config.ModMenuIntegration"
+		]
+	},
+	"mixins": [
+		"jethsportable.mixins.json",
+		{
+			"config": "jethsportable.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*"
+	}
+}

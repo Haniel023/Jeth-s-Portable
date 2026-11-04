@@ -1,0 +1,19 @@
+{
+	"required": true,
+	"package": "com.jethsportable.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"AbstractFurnaceBlockEntityAccessor",
+		"AbstractFurnaceMenuAccessor",
+		"BrewingStandBlockEntityAccessor",
+		"BrewingStandMenuAccessor",
+		"PlayerMixin",
+		"ServerPlayerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

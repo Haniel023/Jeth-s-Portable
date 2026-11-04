@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "modifier": {
+            "type": "minecraft:copy_components",
+            "include": [
+              "jethsportable:core_data"
+            ],
+            "source": "block_entity"
+          },
+          "name": "jethsportable:portable_core_block"
+        }
+      ],
+      "rolls": 1
+    }
+  ],
+  "random_sequence": "jethsportable:blocks/portable_core_block"
+}

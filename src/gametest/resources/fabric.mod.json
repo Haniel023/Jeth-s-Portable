@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "jethsportable-test",
+	"version": "1.0.0",
+	"name": "Jeth's Portable tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.jethsportable.test.PortableClientGameTest"
+		]
+	},
+	"depends": {
+		"jethsportable": "*"
+	}
+}

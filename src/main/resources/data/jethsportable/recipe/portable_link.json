@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "C": "minecraft:copper_ingot",
+    "R": "minecraft:redstone"
+  },
+  "pattern": [
+    "CRC"
+  ],
+  "result": {
+    "id": "jethsportable:portable_link",
+    "count": 4
+  }
+}
