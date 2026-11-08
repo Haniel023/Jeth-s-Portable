@@ -26,6 +26,7 @@ public final class PortableClientConfig {
 	public boolean notifyBrewingDone = true;
 	public boolean notifyStorageFull = true;
 	public boolean notifyDidntFit = true;
+	public boolean notifyAnvil = true;
 	public int sort = SORT_COUNT;
 	public boolean sortReversed = false;
 

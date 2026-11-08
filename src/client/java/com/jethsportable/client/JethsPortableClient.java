@@ -53,6 +53,9 @@ public final class JethsPortableClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(PortablePayloads.MachinesPayload.TYPE, (payload, context) -> {
 			if (ClientStorage.enterSession(payload.session())) ClientStorage.setMachines(payload.machines());
 		});
+		ClientPlayNetworking.registerGlobalReceiver(PortablePayloads.ModulesPayload.TYPE, (payload, context) -> {
+			if (ClientStorage.enterSession(payload.session())) ClientStorage.setModules(payload);
+		});
 		ClientPlayNetworking.registerGlobalReceiver(PortablePayloads.NotifyPayload.TYPE, (payload, context) -> PortableToast.show(context.client(), payload));
 
 		ClientPlayConnectionEvents.DISCONNECT.register((listener, client) -> client.execute(() -> {

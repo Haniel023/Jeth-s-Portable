@@ -47,6 +47,8 @@ public final class ClientStorage {
 	private static List<PortablePayloads.BaseInfo> bases = List.of();
 	private static List<PortablePayloads.LinkInfo> links = List.of();
 	private static List<PortablePayloads.MachineInfo> machines = List.of();
+	private static final PortablePayloads.ModuleInfo[] MODULES = new PortablePayloads.ModuleInfo[6];
+	private static int moduleFlags;
 	private static PortablePayloads.StatusPayload status = new PortablePayloads.StatusPayload(0, true, 0, 0, 0, 0);
 	private static int session;
 	/** Goes up whenever the item list changes, so screens know to re-sort. */
@@ -59,6 +61,8 @@ public final class ClientStorage {
 		ITEMS.clear();
 		links = List.of();
 		machines = List.of();
+		java.util.Arrays.fill(MODULES, null);
+		moduleFlags = 0;
 		status = new PortablePayloads.StatusPayload(0, true, 0, 0, 0, 0);
 		version++;
 	}
@@ -131,6 +135,22 @@ public final class ClientStorage {
 
 	public static void setMachines(List<PortablePayloads.MachineInfo> value) {
 		machines = value;
+	}
+
+	public static void setModules(PortablePayloads.ModulesPayload payload) {
+		java.util.Arrays.fill(MODULES, null);
+		for (PortablePayloads.ModuleInfo info : payload.modules()) {
+			if (info.slot() >= 0 && info.slot() < MODULES.length) MODULES[info.slot()] = info;
+		}
+		moduleFlags = payload.flags();
+	}
+
+	public static PortablePayloads.@Nullable ModuleInfo module(int slot) {
+		return MODULES[slot];
+	}
+
+	public static boolean hasModuleFlag(int flag) {
+		return (moduleFlags & flag) != 0;
 	}
 
 	public static PortablePayloads.StatusPayload status() {

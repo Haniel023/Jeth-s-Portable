@@ -2,7 +2,10 @@ package com.jethsportable.block;
 
 import com.jethsportable.data.PortableBase;
 import com.jethsportable.data.PortableData;
+import com.jethsportable.item.ModuleItem;
 import com.jethsportable.item.RangeUpgradeItem;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.jethsportable.network.ServerActions;
 import com.jethsportable.registry.PortableRegistry;
 import net.minecraft.ChatFormatting;
@@ -68,6 +71,12 @@ public final class PortableCoreBlock extends BaseEntityBlock {
 
 	@Override
 	protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+		if (stack.getItem() instanceof ModuleItem) {
+			if (level instanceof ServerLevel serverLevel && player instanceof ServerPlayer serverPlayer) {
+				this.installModule(serverLevel, pos, serverPlayer, stack);
+			}
+			return InteractionResult.SUCCESS;
+		}
 		if (!(stack.getItem() instanceof RangeUpgradeItem upgrade)) {
 			return InteractionResult.TRY_WITH_EMPTY_HAND;
 		}
@@ -91,6 +100,26 @@ public final class PortableCoreBlock extends BaseEntityBlock {
 			PortableData.get(serverLevel.getServer()).changed(base);
 		}
 		return InteractionResult.SUCCESS;
+	}
+
+	private void installModule(ServerLevel level, BlockPos pos, ServerPlayer player, ItemStack stack) {
+		PortableBase base = this.baseOf(level, pos, player);
+		ModuleSlot module = ModuleSlot.of(stack);
+		if (base == null || module == null) return;
+		if (!base.isMember(player)) {
+			player.sendOverlayMessage(Component.translatable("jethsportable.message.not_member", base.ownerName()).withStyle(ChatFormatting.RED));
+			return;
+		}
+		int slot = base.freeModuleSlot();
+		if (slot < 0) {
+			player.sendOverlayMessage(Component.translatable("jethsportable.message.modules_full", Modules.SLOTS).withStyle(ChatFormatting.RED));
+			return;
+		}
+		base.setModule(slot, module);
+		stack.consume(1, player);
+		level.playSound(null, pos, SoundEvents.ARMOR_EQUIP_IRON.value(), SoundSource.BLOCKS, 0.8F, 1.2F);
+		player.sendOverlayMessage(Component.translatable("jethsportable.message.module_installed", base.moduleCount(), Modules.SLOTS).withStyle(ChatFormatting.GREEN));
+		PortableData.get(level.getServer()).changed(base);
 	}
 
 	@Override

@@ -4,19 +4,28 @@ import com.jethsportable.JethsPortable;
 import com.jethsportable.block.PortableCoreBlock;
 import com.jethsportable.block.PortableCoreBlockEntity;
 import com.jethsportable.data.CoreData;
+import com.jethsportable.item.BlankModuleItem;
 import com.jethsportable.item.CoreBlockItem;
 import com.jethsportable.item.LinkItem;
+import com.jethsportable.item.ModuleItem;
 import com.jethsportable.item.PortableCraftingTableItem;
 import com.jethsportable.item.RangeUpgradeItem;
 import com.jethsportable.menu.StorageMenu;
+import com.jethsportable.module.ModuleRecipe;
+import com.jethsportable.module.Modules;
+import com.mojang.serialization.Codec;
+import java.util.List;
 import java.util.function.Function;
 import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.tags.TagKey;
@@ -27,7 +36,9 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Rarity;
+import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -39,6 +50,27 @@ public final class PortableRegistry {
 		BuiltInRegistries.DATA_COMPONENT_TYPE,
 		JethsPortable.id("core_data"),
 		DataComponentType.<CoreData>builder().persistent(CoreData.CODEC).networkSynchronized(CoreData.STREAM_CODEC).build()
+	);
+
+	/** Which station a module is: a block id. */
+	public static final DataComponentType<Identifier> STATION = Registry.register(
+		BuiltInRegistries.DATA_COMPONENT_TYPE,
+		JethsPortable.id("station"),
+		DataComponentType.<Identifier>builder().persistent(Identifier.CODEC).networkSynchronized(Identifier.STREAM_CODEC).build()
+	);
+
+	/** The placed block a linked module opens. Built-in modules don't have one. */
+	public static final DataComponentType<GlobalPos> MODULE_LINK = Registry.register(
+		BuiltInRegistries.DATA_COMPONENT_TYPE,
+		JethsPortable.id("module_link"),
+		DataComponentType.<GlobalPos>builder().persistent(GlobalPos.CODEC).networkSynchronized(GlobalPos.STREAM_CODEC).build()
+	);
+
+	/** How worn a built-in anvil module is: 0 intact, 1 chipped, 2 damaged. */
+	public static final DataComponentType<Integer> MODULE_DAMAGE = Registry.register(
+		BuiltInRegistries.DATA_COMPONENT_TYPE,
+		JethsPortable.id("module_damage"),
+		DataComponentType.<Integer>builder().persistent(Codec.INT).networkSynchronized(ByteBufCodecs.VAR_INT).build()
 	);
 
 	public static final Block CORE_BLOCK = block("portable_core_block", PortableCoreBlock::new, BlockBehaviour.Properties.of()
@@ -56,6 +88,12 @@ public final class PortableRegistry {
 	public static final Item UPGRADE_DIAMOND = upgrade("diamond_range_upgrade", 4, Rarity.UNCOMMON);
 	public static final Item UPGRADE_NETHERITE = upgrade("netherite_range_upgrade", 5, Rarity.RARE);
 	public static final Item UPGRADE_STAR = upgrade("nether_star_range_upgrade", 6, Rarity.EPIC);
+	public static final Item BLANK_MODULE = item("blank_module", BlankModuleItem::new, new Item.Properties());
+	public static final Item MODULE = item("module", ModuleItem::new, new Item.Properties().stacksTo(1));
+
+	public static final RecipeSerializer<ModuleRecipe> MODULE_RECIPE = Registry.register(
+		BuiltInRegistries.RECIPE_SERIALIZER, JethsPortable.id("module"), ModuleRecipe.SERIALIZER
+	);
 
 	public static final BlockEntityType<PortableCoreBlockEntity> CORE_BLOCK_ENTITY = Registry.register(
 		BuiltInRegistries.BLOCK_ENTITY_TYPE,
@@ -84,6 +122,9 @@ public final class PortableRegistry {
 	/** Blocks that can't be linked, for pack makers. */
 	public static final TagKey<Block> NOT_LINKABLE = TagKey.create(Registries.BLOCK, JethsPortable.id("not_linkable"));
 
+	/** Blocks that can't become modules, for pack makers. Starts with the crafting table, which every Core already has. */
+	public static final TagKey<Block> NOT_A_MODULE = TagKey.create(Registries.BLOCK, JethsPortable.id("not_a_module"));
+
 	public static final CreativeModeTab TAB = Registry.register(
 		BuiltInRegistries.CREATIVE_MODE_TAB,
 		JethsPortable.id("items"),
@@ -99,6 +140,11 @@ public final class PortableRegistry {
 				output.accept(UPGRADE_DIAMOND);
 				output.accept(UPGRADE_NETHERITE);
 				output.accept(UPGRADE_STAR);
+				output.accept(BLANK_MODULE);
+				for (Block station : List.of(Blocks.STONECUTTER, Blocks.SMITHING_TABLE, Blocks.ANVIL, Blocks.ENCHANTING_TABLE, Blocks.GRINDSTONE,
+					Blocks.LOOM, Blocks.CARTOGRAPHY_TABLE, Blocks.ENDER_CHEST, Blocks.FURNACE, Blocks.BREWING_STAND)) {
+					output.accept(Modules.create(Modules.stationId(station), 0, null));
+				}
 			})
 			.build()
 	);

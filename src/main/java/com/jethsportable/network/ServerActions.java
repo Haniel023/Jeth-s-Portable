@@ -6,6 +6,8 @@ import com.jethsportable.data.PortableData;
 import com.jethsportable.data.PortableLink;
 import com.jethsportable.item.PortableCraftingTableItem;
 import com.jethsportable.menu.StorageMenu;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.jethsportable.registry.PortableRegistry;
 import com.jethsportable.remote.RemoteAccess;
 import com.jethsportable.storage.MachineView;
@@ -36,6 +38,7 @@ public final class ServerActions {
 	public static final int TAB_CHESTS = 1;
 	public static final int TAB_MACHINES = 2;
 	public static final int TAB_BASE = 3;
+	public static final int TAB_MODULES = 4;
 	private static final int MAX_NAME_LENGTH = 32;
 
 	private ServerActions() {
@@ -60,6 +63,7 @@ public final class ServerActions {
 		ServerPlayNetworking.registerGlobalReceiver(PortablePayloads.LinkActionPayload.TYPE, (payload, context) -> linkAction(context.player(), payload));
 		ServerPlayNetworking.registerGlobalReceiver(PortablePayloads.MachineActionPayload.TYPE, (payload, context) -> machineAction(context.player(), payload));
 		ServerPlayNetworking.registerGlobalReceiver(PortablePayloads.BaseActionPayload.TYPE, (payload, context) -> baseAction(context.player(), payload));
+		ServerPlayNetworking.registerGlobalReceiver(PortablePayloads.ModuleActionPayload.TYPE, (payload, context) -> moduleAction(context.player(), payload));
 	}
 
 	public static @Nullable StorageSession sessionOf(ServerPlayer player) {
@@ -165,7 +169,7 @@ public final class ServerActions {
 		ServerLevel level = player.level().getServer().getLevel(pos.dimension());
 		if (level == null || !level.isLoaded(pos.pos())) return;
 		BlockEntity entity = level.getBlockEntity(pos.pos());
-		if (!MachineView.isMachine(entity)) return;
+		if (!MachineView.isMachine(entity) || !session.unlocks(entity)) return;
 		switch (payload.action()) {
 			case PortablePayloads.MACHINE_OPEN -> {
 				if (!PortableServerConfig.get().allowRemoteOpening) {
@@ -193,6 +197,52 @@ public final class ServerActions {
 			default -> {
 			}
 		}
+	}
+
+	private static void moduleAction(ServerPlayer player, PortablePayloads.ModuleActionPayload payload) {
+		StorageSession session = sessionOf(player);
+		if (session == null || !session.spendAction()) return;
+		PortableBase base = session.moduleBase();
+		int slot = payload.slot();
+		if (base == null || slot < 0 || slot >= Modules.SLOTS) return;
+		StorageMenu menu = (StorageMenu)player.containerMenu;
+		ModuleSlot current = base.module(slot);
+		switch (payload.action()) {
+			case PortablePayloads.MODULE_OPEN -> {
+				if (current != null && Modules.open(player, base, slot)) return;
+			}
+			case PortablePayloads.MODULE_PLACE -> {
+				ItemStack carried = menu.getCarried();
+				ModuleSlot incoming = ModuleSlot.of(carried);
+				if (incoming == null) return;
+				base.setModule(slot, incoming);
+				carried.shrink(1);
+				if (current != null) {
+					if (menu.getCarried().isEmpty()) {
+						menu.setCarried(current.toStack());
+					} else {
+						player.getInventory().placeItemBackInInventory(current.toStack(), Prediction.SERVER_ONLY);
+					}
+				}
+			}
+			case PortablePayloads.MODULE_TAKE_TO_CURSOR, PortablePayloads.MODULE_TAKE_TO_INVENTORY -> {
+				if (current == null) return;
+				base.setModule(slot, null);
+				if (payload.action() == PortablePayloads.MODULE_TAKE_TO_CURSOR && menu.getCarried().isEmpty()) {
+					menu.setCarried(current.toStack());
+				} else {
+					player.getInventory().placeItemBackInInventory(current.toStack(), Prediction.SERVER_ONLY);
+				}
+			}
+			default -> {
+				return;
+			}
+		}
+		if (payload.action() != PortablePayloads.MODULE_OPEN) {
+			PortableData.get(player.level().getServer()).changed(base);
+		}
+		menu.broadcastChanges();
+		session.sendModules(true);
 	}
 
 	private static void baseAction(ServerPlayer player, PortablePayloads.BaseActionPayload payload) {

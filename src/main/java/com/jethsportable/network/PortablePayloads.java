@@ -34,6 +34,7 @@ public final class PortablePayloads {
 		PayloadTypeRegistry.clientboundPlay().registerLarge(LinksPayload.TYPE, LinksPayload.CODEC, MAX_LARGE_PACKET);
 		PayloadTypeRegistry.clientboundPlay().registerLarge(MachinesPayload.TYPE, MachinesPayload.CODEC, MAX_LARGE_PACKET);
 		PayloadTypeRegistry.clientboundPlay().register(NotifyPayload.TYPE, NotifyPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(ModulesPayload.TYPE, ModulesPayload.CODEC);
 
 		PayloadTypeRegistry.serverboundPlay().register(OpenStoragePayload.TYPE, OpenStoragePayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(OpenCraftingPayload.TYPE, OpenCraftingPayload.CODEC);
@@ -43,6 +44,7 @@ public final class PortablePayloads {
 		PayloadTypeRegistry.serverboundPlay().register(LinkActionPayload.TYPE, LinkActionPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(MachineActionPayload.TYPE, MachineActionPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(BaseActionPayload.TYPE, BaseActionPayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(ModuleActionPayload.TYPE, ModuleActionPayload.CODEC);
 	}
 
 	private static <T extends CustomPacketPayload> CustomPacketPayload.Type<T> payloadType(String name) {
@@ -234,6 +236,8 @@ public final class PortablePayloads {
 	public static final int NOTIFY_BREWING_DONE = 3;
 	public static final int NOTIFY_STORAGE_FULL = 4;
 	public static final int NOTIFY_DIDNT_FIT = 5;
+	public static final int NOTIFY_ANVIL_WORN = 6;
+	public static final int NOTIFY_ANVIL_BROKE = 7;
 
 	/** A pop-up. The client decides from its settings whether to show it. {@code count} isn't capped by the stack size. */
 	public record NotifyPayload(int kind, Component where, ItemStack icon, int count) implements CustomPacketPayload {
@@ -342,6 +346,55 @@ public final class PortablePayloads {
 		public static final Type<MachineActionPayload> TYPE = payloadType("machine_action");
 		public static final StreamCodec<RegistryFriendlyByteBuf, MachineActionPayload> CODEC = StreamCodec.composite(
 			POS, MachineActionPayload::pos, ByteBufCodecs.VAR_INT, MachineActionPayload::action, MachineActionPayload::new
+		);
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
+	/** {@code health} is -1 for anything but an anvil, otherwise 0 (intact) to 2 (damaged). */
+	public record ModuleInfo(int slot, ItemStack stack, int state, int health) {
+		static final StreamCodec<RegistryFriendlyByteBuf, ModuleInfo> CODEC = StreamCodec.composite(
+			ByteBufCodecs.VAR_INT, ModuleInfo::slot,
+			ItemStack.OPTIONAL_STREAM_CODEC, ModuleInfo::stack,
+			ByteBufCodecs.VAR_INT, ModuleInfo::state,
+			ByteBufCodecs.INT, ModuleInfo::health,
+			ModuleInfo::new
+		);
+	}
+
+	public static final int MODULES_HAVE_BASE = 1;
+	public static final int MODULES_FURNACE = 2;
+	public static final int MODULES_BREWING = 4;
+
+	/** The module slots of the nearest Core, and which machine kinds they unlock. Sent with every window. */
+	public record ModulesPayload(int session, int flags, List<ModuleInfo> modules) implements CustomPacketPayload {
+		public static final Type<ModulesPayload> TYPE = payloadType("modules");
+		public static final StreamCodec<RegistryFriendlyByteBuf, ModulesPayload> CODEC = StreamCodec.composite(
+			ByteBufCodecs.VAR_INT, ModulesPayload::session,
+			ByteBufCodecs.VAR_INT, ModulesPayload::flags,
+			ModuleInfo.CODEC.apply(ByteBufCodecs.list()), ModulesPayload::modules,
+			ModulesPayload::new
+		);
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
+	public static final int MODULE_OPEN = 0;
+	public static final int MODULE_PLACE = 1;
+	public static final int MODULE_TAKE_TO_CURSOR = 2;
+	public static final int MODULE_TAKE_TO_INVENTORY = 3;
+
+	/** A click on a module slot. Placing uses whatever is on the cursor; the server checks it's a module. */
+	public record ModuleActionPayload(int slot, int action) implements CustomPacketPayload {
+		public static final Type<ModuleActionPayload> TYPE = payloadType("module_action");
+		public static final StreamCodec<RegistryFriendlyByteBuf, ModuleActionPayload> CODEC = StreamCodec.composite(
+			ByteBufCodecs.VAR_INT, ModuleActionPayload::slot, ByteBufCodecs.VAR_INT, ModuleActionPayload::action, ModuleActionPayload::new
 		);
 
 		@Override

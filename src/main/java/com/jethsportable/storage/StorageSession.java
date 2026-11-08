@@ -6,6 +6,9 @@ import com.jethsportable.data.PortableData;
 import com.jethsportable.data.PortableLink;
 import com.jethsportable.item.PortableCraftingTableItem;
 import com.jethsportable.menu.StorageMenu;
+import com.jethsportable.module.ModuleKind;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.jethsportable.network.PortablePayloads;
 import com.jethsportable.network.ServerActions;
 import com.jethsportable.registry.PortableRegistry;
@@ -108,6 +111,8 @@ public final class StorageSession {
 	private float actionBudget;
 	private int lastLinksHash;
 	private int lastStatusHash;
+	private int lastModulesHash;
+	private @Nullable PortableBase moduleBase;
 
 	public StorageSession(ServerPlayer player, StorageMenu menu) {
 		this.player = player;
@@ -124,6 +129,7 @@ public final class StorageSession {
 	public void setTab(int tab) {
 		this.tab = tab;
 		this.lastLinksHash = 0;
+		this.sendModules(true);
 		if (tab == ServerActions.TAB_CHESTS) this.sendLinks();
 		if (tab == ServerActions.TAB_MACHINES) this.sendMachines();
 	}
@@ -156,6 +162,7 @@ public final class StorageSession {
 		this.flushItems();
 		if (now == this.lastTick && this.age % 20 == 5) {
 			this.sendStatus();
+			this.sendModules(false);
 			if (this.tab == ServerActions.TAB_CHESTS) this.sendLinks();
 		}
 		if (this.tab == ServerActions.TAB_MACHINES && this.age % 10 == 5) this.sendMachines();
@@ -179,6 +186,7 @@ public final class StorageSession {
 		PortableData data = PortableData.get(this.server);
 		List<PortableBase> usable = data.usableBy(this.player);
 		this.inRange = !usable.isEmpty();
+		this.moduleBase = data.nearestUsable(this.player);
 		Set<GlobalPos> seen = new HashSet<>();
 		for (PortableBase base : usable) {
 			this.checkCore(data, base);
@@ -231,6 +239,74 @@ public final class StorageSession {
 				entry.level.getChunkSource().addTicketWithRadius(PortableRegistry.READ_TICKET, ChunkPos.containing(entry.link.pos().pos()), 1);
 			}
 		}
+		// Linked modules too, so the Modules tab can say whether their blocks are still there.
+		if (this.moduleBase != null) {
+			for (int i = 0; i < Modules.SLOTS; i++) {
+				ModuleSlot module = this.moduleBase.module(i);
+				if (module == null || !module.linked() || !this.moduleBase.inRange(module.link().get())) continue;
+				ServerLevel level = this.server.getLevel(module.link().get().dimension());
+				if (level != null) level.getChunkSource().addTicketWithRadius(PortableRegistry.READ_TICKET, ChunkPos.containing(module.link().get().pos()), 1);
+			}
+		}
+	}
+
+	// Modules
+
+	/** The base whose modules this window uses: the nearest Core the player is in range of. */
+	public @Nullable PortableBase moduleBase() {
+		return this.moduleBase;
+	}
+
+	/** Whether the installed modules allow using this machine from the Machines tab. */
+	public boolean unlocks(BlockEntity entity) {
+		if (this.moduleBase == null) return false;
+		if (entity instanceof net.minecraft.world.level.block.entity.BrewingStandBlockEntity) return this.moduleBase.hasModule(ModuleKind.BREWING);
+		return this.moduleBase.hasModule(ModuleKind.FURNACE);
+	}
+
+	public void sendModules(boolean force) {
+		if (this.closed) return;
+		PortableBase base = this.moduleBase;
+		int flags = 0;
+		List<PortablePayloads.ModuleInfo> infos = new ArrayList<>();
+		if (base != null) {
+			flags |= PortablePayloads.MODULES_HAVE_BASE;
+			if (base.hasModule(ModuleKind.FURNACE)) flags |= PortablePayloads.MODULES_FURNACE;
+			if (base.hasModule(ModuleKind.BREWING)) flags |= PortablePayloads.MODULES_BREWING;
+			for (int i = 0; i < Modules.SLOTS; i++) {
+				ModuleSlot module = base.module(i);
+				if (module != null) infos.add(this.describe(base, i, module));
+			}
+		}
+		int hash = Objects.hash(base == null ? null : base.id(), flags, infos.stream().map(info -> Objects.hash(info.slot(), info.state(), info.health(), ModuleSlot.of(info.stack()))).toList());
+		if (force || hash != this.lastModulesHash) {
+			this.lastModulesHash = hash;
+			ServerPlayNetworking.send(this.player, new PortablePayloads.ModulesPayload(this.id, flags, infos));
+		}
+	}
+
+	private PortablePayloads.ModuleInfo describe(PortableBase base, int slot, ModuleSlot module) {
+		int state = PortablePayloads.STATE_OK;
+		int health = Modules.isAnvil(module.station()) ? module.damage() : -1;
+		if (module.kind() == null) {
+			state = PortablePayloads.STATE_MISSING;
+		} else if (module.linked()) {
+			GlobalPos pos = module.link().get();
+			ServerLevel level = this.server.getLevel(pos.dimension());
+			if (!base.inRange(pos)) {
+				state = PortablePayloads.STATE_OUT_OF_RANGE;
+			} else if (level == null || !level.isLoaded(pos.pos())) {
+				state = PortablePayloads.STATE_LOADING;
+			} else {
+				BlockState blockState = level.getBlockState(pos.pos());
+				if (!Modules.sameStation(module.station(), blockState)) {
+					state = PortablePayloads.STATE_MISSING;
+				} else if (health >= 0) {
+					health = Modules.anvilDamage(blockState.getBlock());
+				}
+			}
+		}
+		return new PortablePayloads.ModuleInfo(slot, module.toStack(), state, health);
 	}
 
 	private void scanSome() {
@@ -396,10 +472,12 @@ public final class StorageSession {
 
 	private void sendMachines() {
 		List<PortablePayloads.MachineInfo> machines = new ArrayList<>();
+		boolean anyUnlocked = this.moduleBase != null && (this.moduleBase.hasModule(ModuleKind.FURNACE) || this.moduleBase.hasModule(ModuleKind.BREWING));
 		for (Entry entry : this.order) {
-			if (!entry.machine) continue;
+			if (!entry.machine || !anyUnlocked) continue;
 			BlockEntity blockEntity = entry.state == PortablePayloads.STATE_OK && entry.level != null && entry.level.isLoaded(entry.link.pos().pos())
 				? entry.level.getBlockEntity(entry.link.pos().pos()) : null;
+			if (blockEntity != null && !this.unlocks(blockEntity)) continue;
 			if (MachineView.isMachine(blockEntity)) {
 				machines.add(MachineView.describe(entry.link.pos(), entry.link.name(), entry.icon, blockEntity));
 			} else {

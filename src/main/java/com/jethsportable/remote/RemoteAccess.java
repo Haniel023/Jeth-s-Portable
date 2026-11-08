@@ -11,12 +11,15 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,10 +47,36 @@ public final class RemoteAccess {
 		ServerLevel level = player.level().getServer().getLevel(pos.dimension());
 		if (level == null || !level.isLoaded(pos.pos())) return false;
 		MenuProvider provider = level.getBlockState(pos.pos()).getMenuProvider(level, pos.pos());
-		if (provider == null) return false;
+		return provider != null && open(player, base, pos, provider);
+	}
+
+	/** Opens a menu that belongs to the block at {@code pos}, keeping it open while the base's range holds. */
+	public static boolean open(ServerPlayer player, PortableBase base, GlobalPos pos, MenuProvider provider) {
+		ServerLevel level = player.level().getServer().getLevel(pos.dimension());
+		if (level == null || !level.isLoaded(pos.pos())) return false;
 		OptionalInt containerId = player.openMenu(provider);
 		if (containerId.isEmpty()) return false;
 		OPEN.put(player.getUUID(), new Open(containerId.getAsInt(), base.id(), pos));
+		keepLoaded(level, pos);
+		return true;
+	}
+
+	/**
+	 * For blocks that open their screen from a right click rather than declaring it: right clicks the
+	 * block for the player and keeps whatever menu that opened.
+	 */
+	public static boolean openByUse(ServerPlayer player, PortableBase base, GlobalPos pos) {
+		ServerLevel level = player.level().getServer().getLevel(pos.dimension());
+		if (level == null || !level.isLoaded(pos.pos())) return false;
+		int before = player.containerMenu.containerId;
+		BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos.pos()), Direction.UP, pos.pos(), false);
+		try {
+			level.getBlockState(pos.pos()).useWithoutItem(level, player, hit);
+		} catch (RuntimeException e) {
+			return false;
+		}
+		if (player.containerMenu == player.inventoryMenu || player.containerMenu.containerId == before) return false;
+		OPEN.put(player.getUUID(), new Open(player.containerMenu.containerId, base.id(), pos));
 		keepLoaded(level, pos);
 		return true;
 	}

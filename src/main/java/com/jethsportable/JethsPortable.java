@@ -3,6 +3,7 @@ package com.jethsportable;
 import com.jethsportable.config.PortableServerConfig;
 import com.jethsportable.link.LinkHandler;
 import com.jethsportable.machine.MachineWatcher;
+import com.jethsportable.module.VirtualStations;
 import com.jethsportable.network.PortablePayloads;
 import com.jethsportable.network.ServerActions;
 import com.jethsportable.registry.PortableRegistry;
@@ -29,5 +30,6 @@ public final class JethsPortable implements ModInitializer {
 		LinkHandler.register();
 		MachineWatcher.register();
 		RemoteAccess.register();
+		VirtualStations.register();
 	}
 }

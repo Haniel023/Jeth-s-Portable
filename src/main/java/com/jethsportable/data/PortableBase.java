@@ -1,6 +1,9 @@
 package com.jethsportable.data;
 
 import com.jethsportable.config.PortableServerConfig;
+import com.jethsportable.module.ModuleKind;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.ArrayList;
@@ -12,6 +15,7 @@ import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import org.jspecify.annotations.Nullable;
 
@@ -24,6 +28,13 @@ public final class PortableBase {
 		).apply(i, Trusted::new));
 	}
 
+	private record IndexedModule(int slot, ModuleSlot module) {
+		static final Codec<IndexedModule> CODEC = RecordCodecBuilder.create(i -> i.group(
+			Codec.INT.fieldOf("slot").forGetter(IndexedModule::slot),
+			ModuleSlot.CODEC.fieldOf("module").forGetter(IndexedModule::module)
+		).apply(i, IndexedModule::new));
+	}
+
 	public static final Codec<PortableBase> CODEC = RecordCodecBuilder.create(i -> i.group(
 		UUIDUtil.CODEC.fieldOf("id").forGetter(PortableBase::id),
 		UUIDUtil.CODEC.fieldOf("owner").forGetter(PortableBase::owner),
@@ -32,14 +43,18 @@ public final class PortableBase {
 		Codec.INT.optionalFieldOf("level", 1).forGetter(PortableBase::level),
 		GlobalPos.CODEC.optionalFieldOf("core").forGetter(b -> Optional.ofNullable(b.core)),
 		Trusted.CODEC.listOf().optionalFieldOf("trusted", List.of()).forGetter(b -> b.trusted.entrySet().stream().map(e -> new Trusted(e.getKey(), e.getValue())).toList()),
-		PortableLink.CODEC.listOf().optionalFieldOf("links", List.of()).forGetter(PortableBase::links)
-	).apply(i, (id, owner, ownerName, name, level, core, trusted, links) -> {
+		PortableLink.CODEC.listOf().optionalFieldOf("links", List.of()).forGetter(PortableBase::links),
+		IndexedModule.CODEC.listOf().optionalFieldOf("modules", List.of()).forGetter(PortableBase::indexedModules)
+	).apply(i, (id, owner, ownerName, name, level, core, trusted, links, modules) -> {
 		PortableBase base = new PortableBase(id, owner, ownerName);
 		base.name = name;
 		base.level = level;
 		base.core = core.orElse(null);
 		trusted.forEach(t -> base.trusted.put(t.id(), t.name()));
 		base.links.addAll(links);
+		for (IndexedModule module : modules) {
+			if (module.slot() >= 0 && module.slot() < Modules.SLOTS) base.modules[module.slot()] = module.module();
+		}
 		return base;
 	}));
 
@@ -48,6 +63,7 @@ public final class PortableBase {
 	private final String ownerName;
 	private final Map<UUID, String> trusted = new LinkedHashMap<>();
 	private final List<PortableLink> links = new ArrayList<>();
+	private final @Nullable ModuleSlot[] modules = new ModuleSlot[Modules.SLOTS];
 	private String name = "";
 	private int level = 1;
 	private @Nullable GlobalPos core;
@@ -107,6 +123,49 @@ public final class PortableBase {
 			if (link.pos().equals(pos)) return link;
 		}
 		return null;
+	}
+
+	public Component displayName() {
+		return this.name.isEmpty() ? Component.translatable("jethsportable.gui.base_default", this.ownerName) : Component.literal(this.name);
+	}
+
+	public @Nullable ModuleSlot module(int slot) {
+		return slot >= 0 && slot < Modules.SLOTS ? this.modules[slot] : null;
+	}
+
+	public void setModule(int slot, @Nullable ModuleSlot module) {
+		this.modules[slot] = module;
+	}
+
+	/** The first empty module slot, or -1 if all are used. */
+	public int freeModuleSlot() {
+		for (int i = 0; i < Modules.SLOTS; i++) {
+			if (this.modules[i] == null) return i;
+		}
+		return -1;
+	}
+
+	public int moduleCount() {
+		int count = 0;
+		for (ModuleSlot module : this.modules) {
+			if (module != null) count++;
+		}
+		return count;
+	}
+
+	public boolean hasModule(ModuleKind kind) {
+		for (ModuleSlot module : this.modules) {
+			if (module != null && module.kind() == kind) return true;
+		}
+		return false;
+	}
+
+	private List<IndexedModule> indexedModules() {
+		List<IndexedModule> result = new ArrayList<>();
+		for (int i = 0; i < Modules.SLOTS; i++) {
+			if (this.modules[i] != null) result.add(new IndexedModule(i, this.modules[i]));
+		}
+		return result;
 	}
 
 	public boolean isMember(Player player) {

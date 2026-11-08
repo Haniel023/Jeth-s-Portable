@@ -13,6 +13,7 @@ A Fabric mod for Minecraft 26.3. Carry a crafting table, link the chests and fur
 1. Craft a **Portable Core Block** and place it. That starts a base, owned by you.
 2. Craft **Portable Links** and use one on each chest, barrel, shulker box, furnace, smoker, blast furnace or brewing stand you want in the base. The block stays exactly as it was.
 3. Press `K`, or click the button in your inventory, to open the storage window.
+4. Install **modules** in the Core for remote stonecutters, anvils, enchanting and more.
 
 The **Portable Crafting Table** works by itself, with no base needed.
 
@@ -28,6 +29,8 @@ The **Portable Crafting Table** works by itself, with no base needed.
 | Diamond Range Upgrade | 4 diamonds, 1 eye of ender |
 | Netherite Range Upgrade | 1 netherite ingot, 4 blaze rods, 4 crying obsidian |
 | Nether Star Range Upgrade | 1 nether star, 4 eyes of ender, 4 amethyst shards |
+| Blank Module (makes 2) | 2 iron ingots, 2 copper ingots, 1 redstone |
+| Built-in module | 1 Blank Module and the station block, anywhere in the grid |
 
 ## Portable Crafting Table
 
@@ -69,9 +72,41 @@ Search by name, `@mod`, `#tag`, or `-word` to exclude. The 3x3 grid on the right
 
 Without a *Store here* chest, items go to a chest that already holds the same item, then wherever there's room.
 
-**Machines.** Linked furnaces, smokers, blast furnaces and brewing stands, with live progress and fuel. Click a row to open it, or use the buttons to take the output into your inventory or send it to storage.
+**Machines.** Linked furnaces, smokers, blast furnaces and brewing stands, with live progress and fuel. Click a row to open it, or use the buttons to take the output into your inventory or send it to storage. Furnace-type machines need a Furnace Module in the Core, and brewing stands a Brewing Module.
+
+**Modules.** The Core's 6 module slots. See below.
 
 **Base.** Level, reach, links, the next upgrade, trusted players and notification settings.
+
+## Modules
+
+Every Core has 6 module slots, on the storage window's **Modules** tab. A module puts a workstation in reach from anywhere in the base: click it to open that station's screen, and closing it brings you back to the window. Modules can be swapped at any time.
+
+| Action | What it does |
+|---|---|
+| Click an empty slot with a module on the cursor | Install it (on a used slot, the two swap) |
+| Click a module | Open it |
+| Shift + click / right click a module | Take it out, to your inventory / the cursor |
+| Right click the Core with a module | Install it in the first free slot |
+
+There are two ways to make one, both starting from a **Blank Module**:
+
+- **Linked:** use a Blank Module on a station you've placed in your base. The block stays where it is, and the module opens that block. A linked enchanting table uses its own bookshelves, and a linked anvil wears down like any anvil.
+- **Built in:** craft a Blank Module with the station block. The block goes inside the module.
+
+| Module | Built in | Linked |
+|---|---|---|
+| Stonecutter, Smithing Table, Grindstone, Loom, Cartography Table | Yes | Yes |
+| Anvil (any wear) | Yes. Each use has a 12% chance to wear it from intact to chipped to damaged, then it breaks, with a warning. Its health shows on the item and the Modules tab. | Yes, the placed anvil wears as usual |
+| Enchanting Table | Yes. Bookshelves count around the Core block, placed like a real table's. | Yes, with the table's own bookshelves |
+| Ender Chest | Yes | Yes. Either way it opens your own ender chest. |
+| Furnace (or Smoker, Blast Furnace) | Yes. Unlocks linked furnaces, smokers and blast furnaces on the Machines tab. | No |
+| Brewing Stand | Yes. Unlocks linked brewing stands on the Machines tab. | No |
+| Modded stations | If the block declares its screen the vanilla way | Yes, if right clicking it opens a screen |
+
+A module alone in a crafting grid comes apart again: the Blank Module back, plus the block if it had one inside. The crafting table isn't a module, since every Core has one built in.
+
+If you're in range of several Cores, the modules you get are the nearest Core's, so a second Core doesn't add six more slots.
 
 ## Notifications
 
@@ -101,6 +136,8 @@ Linked chests are only read while a storage window is open, and their chunks loa
 
 Anything with a menu that exposes its items through Fabric's Transfer API (which includes ordinary `Container` blocks) can be linked. To stop a block being linked, add it to the block tag `jethsportable:not_linkable`.
 
+Workstations without an inventory can be modules. A built-in module needs the block to declare its screen with `getMenuProvider`, like vanilla's stations; a linked one only needs a right click on the block to open a screen, so stations such as Nemo's Woodcutter work linked. To stop a block becoming a module, add it to the block tag `jethsportable:not_a_module`.
+
 ## Building
 
 ```
@@ -113,7 +150,8 @@ To test alongside other mods, put their jars in a folder and run `./gradlew runC
 
 ## Limits
 
-- Ender chests can't be linked. They hold a different inventory for each player.
+- Ender chests can't be linked with a Portable Link, since they hold a different inventory for each player. Use an Ender Chest Module instead.
+- Modded stations that need their own block entity, or that open their screen only from a right click, can only be linked modules, not built in.
 - Items in a machine don't count as storage, so they don't appear on the Items tab.
 - Crafting grid contents go back to your inventory when you open a chest remotely, the same as closing any crafting menu.
 

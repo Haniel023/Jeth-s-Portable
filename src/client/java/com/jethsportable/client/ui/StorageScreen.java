@@ -8,7 +8,11 @@ import com.jethsportable.client.config.PortableClientConfig;
 import com.jethsportable.client.config.PortableConfigScreen;
 import com.jethsportable.client.mixin.AbstractContainerScreenAccessor;
 import com.jethsportable.client.mixin.RecipeBookComponentAccessor;
+import com.jethsportable.item.ModuleItem;
 import com.jethsportable.menu.StorageMenu;
+import com.jethsportable.module.ModuleKind;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.jethsportable.network.PortablePayloads;
 import com.jethsportable.network.ServerActions;
 import com.jethsportable.registry.PortableRegistry;
@@ -30,6 +34,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.core.GlobalPos;
+import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
@@ -56,13 +61,16 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 	private static final Identifier FURNACE_TEXTURE = Identifier.withDefaultNamespace("textures/gui/container/furnace.png");
 	private static final Identifier LIT_SPRITE = Identifier.withDefaultNamespace("container/furnace/lit_progress");
 	private static final Identifier BURN_SPRITE = Identifier.withDefaultNamespace("container/furnace/burn_progress");
-	private static final String[] TAB_NAMES = {"items", "chests", "machines", "base"};
+	private static final String[] TAB_NAMES = {"items", "chests", "machines", "base", "modules"};
+	private static final int MODULE_COLUMNS = 3;
+	private static final int MODULE_CELL_WIDTH = 54;
 	/** The tab the next window opens on. */
 	private static int lastTab = ServerActions.TAB_ITEMS;
 
 	// Item stacks can't be made before a world has loaded, so these can't be static.
 	private final ItemStack[] tabIcons = {
-		new ItemStack(Items.BUNDLE), new ItemStack(Items.CHEST), new ItemStack(Items.FURNACE), new ItemStack(PortableRegistry.CORE_ITEM)
+		new ItemStack(Items.BUNDLE), new ItemStack(Items.CHEST), new ItemStack(Items.FURNACE), new ItemStack(PortableRegistry.CORE_ITEM),
+		new ItemStack(PortableRegistry.BLANK_MODULE)
 	};
 	private final ItemStack iconTarget = new ItemStack(Items.HOPPER);
 	private final ItemStack iconShow = new ItemStack(Items.SPYGLASS);
@@ -207,7 +215,7 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 	private void applyTabVisibility() {
 		boolean items = this.tab == ServerActions.TAB_ITEMS;
 		boolean base = this.tab == ServerActions.TAB_BASE;
-		this.searchBox.visible = !base && this.renamingLink == null && this.renamingBase == null;
+		this.searchBox.visible = !base && this.tab != ServerActions.TAB_MODULES && this.renamingLink == null && this.renamingBase == null;
 		this.storeAllButton.visible = items;
 		this.matchingButton.visible = items;
 		this.clearButton.visible = items;
@@ -361,6 +369,7 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 			case ServerActions.TAB_ITEMS -> (this.itemView.size() + COLUMNS - 1) / COLUMNS;
 			case ServerActions.TAB_CHESTS -> this.linkView().size();
 			case ServerActions.TAB_MACHINES -> this.machineView().size();
+			case ServerActions.TAB_MODULES -> 0;
 			default -> {
 				PortablePayloads.BaseInfo base = this.currentBase();
 				yield base == null ? 0 : base.trusted().size();
@@ -441,7 +450,7 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 				}
 			}
 		}
-		if (this.tab != ServerActions.TAB_BASE || this.trustedRows() > 0) {
+		if (this.tab != ServerActions.TAB_MODULES && (this.tab != ServerActions.TAB_BASE || this.trustedRows() > 0)) {
 			int scrollMax = this.maxScroll();
 			int barY = this.tab == ServerActions.TAB_BASE ? this.trustedTop() : StorageMenu.GRID_Y - 1;
 			int barH = this.tab == ServerActions.TAB_BASE ? this.trustedRows() * 11 + 1 : this.rows * 18 + 2;
@@ -476,6 +485,7 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 			case ServerActions.TAB_ITEMS -> this.extractItems(graphics, mx, my);
 			case ServerActions.TAB_CHESTS -> this.extractLinks(graphics, mx, my);
 			case ServerActions.TAB_MACHINES -> this.extractMachines(graphics, mx, my);
+			case ServerActions.TAB_MODULES -> this.extractModules(graphics, mx, my);
 			default -> this.extractBase(graphics, mx, my);
 		}
 
@@ -632,7 +642,13 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 	private void extractMachines(GuiGraphicsExtractor graphics, int mx, int my) {
 		List<PortablePayloads.MachineInfo> machines = this.machineView();
 		if (machines.isEmpty()) {
-			this.extractCentered(graphics, this.search.isBlank() ? Component.translatable("jethsportable.gui.no_machines") : Component.translatable("jethsportable.gui.no_results"));
+			Component message;
+			if (!ClientStorage.hasModuleFlag(PortablePayloads.MODULES_FURNACE) && !ClientStorage.hasModuleFlag(PortablePayloads.MODULES_BREWING)) {
+				message = Component.translatable("jethsportable.gui.machines_need_module");
+			} else {
+				message = this.search.isBlank() ? Component.translatable("jethsportable.gui.no_machines") : Component.translatable("jethsportable.gui.no_results");
+			}
+			this.extractCentered(graphics, message);
 			return;
 		}
 		for (int i = 0; i < this.listRows() && this.scroll + i < machines.size(); i++) {
@@ -672,6 +688,122 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 			if (collectHovered) this.hoverText = Component.translatable("jethsportable.gui.machine.collect");
 			if (storageHovered) this.hoverText = Component.translatable("jethsportable.gui.machine.to_storage");
 		}
+	}
+
+	private int moduleCellHeight() {
+		return this.rows * 18 / 2;
+	}
+
+	private void extractModules(GuiGraphicsExtractor graphics, int mx, int my) {
+		if (!ClientStorage.hasModuleFlag(PortablePayloads.MODULES_HAVE_BASE)) {
+			this.extractCentered(graphics, JethsPortableClient.outOfRangeMessage(this.minecraft));
+			return;
+		}
+		int cellHeight = this.moduleCellHeight();
+		for (int slot = 0; slot < Modules.SLOTS; slot++) {
+			int cellX = GRID_X - 1 + slot % MODULE_COLUMNS * MODULE_CELL_WIDTH;
+			int cellY = StorageMenu.GRID_Y - 1 + slot / MODULE_COLUMNS * cellHeight;
+			boolean hovered = VanillaGui.inside(mx, my, cellX, cellY, MODULE_CELL_WIDTH, cellHeight);
+			graphics.fill(cellX + 1, cellY + 1, cellX + MODULE_CELL_WIDTH - 1, cellY + cellHeight - 1, hovered ? 0x28000000 : 0x12000000);
+			int centerX = cellX + MODULE_CELL_WIDTH / 2;
+			int iconX = centerX - 8;
+			int iconY = cellY + 4;
+			VanillaGui.slot(graphics, iconX - 1, iconY - 1);
+			PortablePayloads.ModuleInfo info = ClientStorage.module(slot);
+			if (info == null) {
+				this.extractSmallCentered(graphics, Component.translatable("jethsportable.gui.module.empty"), centerX, iconY + 21, 0xFF707070);
+				if (hovered) this.hoverText = Component.translatable("jethsportable.gui.module.empty.tip");
+				continue;
+			}
+			graphics.item(info.stack(), iconX, iconY);
+			graphics.itemDecorations(this.font, info.stack(), iconX, iconY, null);
+			ModuleSlot module = ModuleSlot.of(info.stack());
+			Component name = module == null ? info.stack().getHoverName() : shortName(module.station());
+			this.extractSmallCentered(graphics, name, centerX, iconY + 20, VanillaGui.TEXT_DARK);
+			this.extractSmallCentered(graphics, this.moduleStatus(info, module), centerX, iconY + 28, this.moduleStatusColor(info, module));
+			if (hovered) {
+				this.hoveredStack = info.stack();
+				this.hoverText = Component.translatable(module != null && (module.kind() == ModuleKind.FURNACE || module.kind() == ModuleKind.BREWING)
+					? "jethsportable.gui.module.machines.tip" : "jethsportable.gui.module.tip");
+			}
+		}
+	}
+
+	private Component moduleStatus(PortablePayloads.ModuleInfo info, @Nullable ModuleSlot module) {
+		return switch (info.state()) {
+			case PortablePayloads.STATE_MISSING -> Component.translatable("jethsportable.gui.missing");
+			case PortablePayloads.STATE_OUT_OF_RANGE -> Component.translatable("jethsportable.gui.out_of_range");
+			case PortablePayloads.STATE_LOADING -> Component.translatable("jethsportable.gui.loading");
+			default -> {
+				if (info.health() >= 0) yield ModuleItem.healthName(info.health()).copy().withStyle(net.minecraft.ChatFormatting.RESET);
+				if (module != null && (module.kind() == ModuleKind.FURNACE || module.kind() == ModuleKind.BREWING)) yield Component.translatable("jethsportable.gui.module.machines");
+				yield Component.translatable(module != null && module.linked() ? "jethsportable.gui.module.linked" : "jethsportable.gui.module.built_in");
+			}
+		};
+	}
+
+	private int moduleStatusColor(PortablePayloads.ModuleInfo info, @Nullable ModuleSlot module) {
+		if (info.state() == PortablePayloads.STATE_LOADING) return 0xFF606060;
+		if (info.state() != PortablePayloads.STATE_OK) return VanillaGui.TEXT_DARK_RED;
+		return switch (info.health()) {
+			case 0 -> VanillaGui.TEXT_DARK_GREEN;
+			case 1 -> 0xFF9A7400;
+			case 2 -> VanillaGui.TEXT_DARK_RED;
+			default -> 0xFF505050;
+		};
+	}
+
+	/** "Enchanting" rather than "Enchanting Table", where a short name is known, so it fits a cell. */
+	private static Component shortName(Identifier station) {
+		String key = "jethsportable.module.short." + station.getNamespace() + "." + station.getPath();
+		return Language.getInstance().has(key) ? Component.translatable(key) : Modules.stationName(station);
+	}
+
+	/** Text at three quarters size, centred and cut to fit a module cell. */
+	private void extractSmallCentered(GuiGraphicsExtractor graphics, Component text, int centerX, int y, int color) {
+		int room = (int)((MODULE_CELL_WIDTH - 4) / 0.75F);
+		String line = text.getString();
+		if (this.font.width(line) > room) {
+			line = this.font.plainSubstrByWidth(line, room - this.font.width("..")) + "..";
+		}
+		graphics.pose().pushMatrix();
+		graphics.pose().translate(centerX, y);
+		graphics.pose().scale(0.75F, 0.75F);
+		graphics.text(this.font, line, -this.font.width(line) / 2, 0, color, false);
+		graphics.pose().popMatrix();
+	}
+
+	private boolean clickModules(MouseButtonEvent event, int mx, int my) {
+		int cellHeight = this.moduleCellHeight();
+		if (!VanillaGui.inside(mx, my, GRID_X - 1, StorageMenu.GRID_Y - 1, MODULE_COLUMNS * MODULE_CELL_WIDTH, cellHeight * 2)) return false;
+		int slot = (mx - GRID_X + 1) / MODULE_CELL_WIDTH + (my - StorageMenu.GRID_Y + 1) / cellHeight * MODULE_COLUMNS;
+		if (slot < 0 || slot >= Modules.SLOTS) return true;
+		ItemStack carried = this.menu.getCarried();
+		if (!carried.isEmpty()) {
+			if (carried.getItem() instanceof ModuleItem) {
+				VanillaGui.clickSound(this.minecraft);
+				ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(slot, PortablePayloads.MODULE_PLACE));
+			}
+			return true;
+		}
+		PortablePayloads.ModuleInfo info = ClientStorage.module(slot);
+		if (info == null) return true;
+		VanillaGui.clickSound(this.minecraft);
+		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+			ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(slot, PortablePayloads.MODULE_TAKE_TO_CURSOR));
+		} else if (this.minecraft.hasShiftDown()) {
+			ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(slot, PortablePayloads.MODULE_TAKE_TO_INVENTORY));
+		} else {
+			ModuleSlot module = ModuleSlot.of(info.stack());
+			ModuleKind kind = module == null ? null : module.kind();
+			if (kind == ModuleKind.FURNACE || kind == ModuleKind.BREWING) {
+				this.selectTab(ServerActions.TAB_MACHINES, true);
+			} else {
+				if (info.state() == PortablePayloads.STATE_OK) JethsPortableClient.expectRemoteScreen(ServerActions.TAB_MODULES);
+				ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(slot, PortablePayloads.MODULE_OPEN));
+			}
+		}
+		return true;
 	}
 
 	private void extractMachineSlot(GuiGraphicsExtractor graphics, ItemStack stack, int x, int y, int mx, int my) {
@@ -760,7 +892,9 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 			lines.add(1, Component.translatable("jethsportable.gui.in_storage", String.format(Locale.ROOT, "%,d", this.hoveredItem.count)).withStyle(ChatFormatting.GOLD));
 			graphics.setTooltipForNextFrame(this.font, lines, this.hoveredItem.stack.getTooltipImage(), mouseX, mouseY);
 		} else if (!this.hoveredStack.isEmpty()) {
-			graphics.setTooltipForNextFrame(this.font, this.getTooltipFromContainerItem(this.hoveredStack), this.hoveredStack.getTooltipImage(), mouseX, mouseY);
+			List<Component> lines = new ArrayList<>(this.getTooltipFromContainerItem(this.hoveredStack));
+			if (this.hoverText != null) lines.add(this.hoverText.copy().withStyle(ChatFormatting.DARK_GRAY));
+			graphics.setTooltipForNextFrame(this.font, lines, this.hoveredStack.getTooltipImage(), mouseX, mouseY);
 		} else if (this.hoverText != null) {
 			graphics.setTooltipForNextFrame(this.font, this.font.split(this.hoverText, 180), mouseX, mouseY);
 		}
@@ -789,6 +923,7 @@ public final class StorageScreen extends AbstractRecipeBookScreen<StorageMenu> {
 			case ServerActions.TAB_ITEMS -> this.clickItems(event, mx, my);
 			case ServerActions.TAB_CHESTS -> this.clickLinks(event, mx, my);
 			case ServerActions.TAB_MACHINES -> this.clickMachines(event, mx, my);
+			case ServerActions.TAB_MODULES -> this.clickModules(event, mx, my);
 			default -> this.clickBase(event, mx, my);
 		};
 		if (handled) {

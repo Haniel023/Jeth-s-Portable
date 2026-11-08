@@ -1,0 +1,108 @@
+{
+  "model": {
+    "type": "minecraft:select",
+    "property": "minecraft:component",
+    "component": "jethsportable:station",
+    "cases": [
+      {
+        "when": "minecraft:stonecutter",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_stonecutter"
+        }
+      },
+      {
+        "when": "minecraft:smithing_table",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_smithing_table"
+        }
+      },
+      {
+        "when": "minecraft:anvil",
+        "model": {
+          "type": "minecraft:select",
+          "property": "minecraft:component",
+          "component": "jethsportable:module_damage",
+          "cases": [
+            {
+              "when": 1,
+              "model": {
+                "type": "minecraft:model",
+                "model": "jethsportable:item/module_anvil_chipped"
+              }
+            },
+            {
+              "when": 2,
+              "model": {
+                "type": "minecraft:model",
+                "model": "jethsportable:item/module_anvil_damaged"
+              }
+            }
+          ],
+          "fallback": {
+            "type": "minecraft:model",
+            "model": "jethsportable:item/module_anvil"
+          }
+        }
+      },
+      {
+        "when": "minecraft:enchanting_table",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_enchanting_table"
+        }
+      },
+      {
+        "when": "minecraft:grindstone",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_grindstone"
+        }
+      },
+      {
+        "when": "minecraft:loom",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_loom"
+        }
+      },
+      {
+        "when": "minecraft:cartography_table",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_cartography_table"
+        }
+      },
+      {
+        "when": [
+          "minecraft:furnace",
+          "minecraft:smoker",
+          "minecraft:blast_furnace"
+        ],
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_furnace"
+        }
+      },
+      {
+        "when": "minecraft:brewing_stand",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_brewing_stand"
+        }
+      },
+      {
+        "when": "minecraft:ender_chest",
+        "model": {
+          "type": "minecraft:model",
+          "model": "jethsportable:item/module_ender_chest"
+        }
+      }
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "jethsportable:item/module"
+    }
+  }
+}

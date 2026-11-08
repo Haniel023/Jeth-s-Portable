@@ -65,6 +65,7 @@ public final class PortableToast implements Toast {
 			case PortablePayloads.NOTIFY_BREWING_DONE -> config.notifyBrewingDone;
 			case PortablePayloads.NOTIFY_STORAGE_FULL -> config.notifyStorageFull;
 			case PortablePayloads.NOTIFY_DIDNT_FIT -> config.notifyDidntFit;
+			case PortablePayloads.NOTIFY_ANVIL_WORN, PortablePayloads.NOTIFY_ANVIL_BROKE -> config.notifyAnvil;
 			default -> false;
 		};
 	}
@@ -76,6 +77,8 @@ public final class PortableToast implements Toast {
 			case PortablePayloads.NOTIFY_OUTPUT_FULL -> Component.translatable("jethsportable.toast.output_full", payload.where());
 			case PortablePayloads.NOTIFY_BREWING_DONE -> Component.translatable("jethsportable.toast.brewing_done");
 			case PortablePayloads.NOTIFY_STORAGE_FULL -> Component.translatable("jethsportable.toast.storage_full");
+			case PortablePayloads.NOTIFY_ANVIL_WORN -> Component.translatable("jethsportable.toast.anvil_worn");
+			case PortablePayloads.NOTIFY_ANVIL_BROKE -> Component.translatable("jethsportable.toast.anvil_broke");
 			default -> Component.translatable("jethsportable.toast.didnt_fit");
 		};
 	}
@@ -86,6 +89,8 @@ public final class PortableToast implements Toast {
 			case PortablePayloads.NOTIFY_NO_FUEL -> Component.translatable("jethsportable.toast.detail_waiting", payload.count(), name);
 			case PortablePayloads.NOTIFY_STORAGE_FULL -> Component.translatable("jethsportable.toast.detail_percent", payload.count());
 			case PortablePayloads.NOTIFY_DIDNT_FIT -> Component.translatable("jethsportable.toast.detail_left", payload.count(), name);
+			case PortablePayloads.NOTIFY_ANVIL_WORN -> Component.translatable("jethsportable.toast.detail_anvil_worn");
+			case PortablePayloads.NOTIFY_ANVIL_BROKE -> Component.translatable("jethsportable.toast.detail_anvil_broke", payload.where());
 			default -> Component.translatable("jethsportable.toast.detail_count", payload.count(), name);
 		};
 	}

@@ -33,6 +33,8 @@ public final class PortableConfigScreen extends Screen {
 		y += 24;
 		this.toggle(left, y, "storage_full", config.notifyStorageFull, v -> config.notifyStorageFull = v);
 		this.toggle(right, y, "didnt_fit", config.notifyDidntFit, v -> config.notifyDidntFit = v);
+		y += 24;
+		this.toggle(left, y, "anvil", config.notifyAnvil, v -> config.notifyAnvil = v);
 		y += 36;
 		this.toggle(left, y, "inventory_button", config.showInventoryButton, v -> config.showInventoryButton = v);
 		this.addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, b -> this.onClose()).bounds(this.width / 2 - 100, this.height - 28, 200, 20).build());

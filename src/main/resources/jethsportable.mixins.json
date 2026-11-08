@@ -3,10 +3,13 @@
 	"package": "com.jethsportable.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
+		"AbstractContainerMenuMixin",
 		"AbstractFurnaceBlockEntityAccessor",
 		"AbstractFurnaceMenuAccessor",
+		"AnvilMenuMixin",
 		"BrewingStandBlockEntityAccessor",
 		"BrewingStandMenuAccessor",
+		"ItemCombinerMenuMixin",
 		"PlayerMixin",
 		"ServerPlayerMixin"
 	],

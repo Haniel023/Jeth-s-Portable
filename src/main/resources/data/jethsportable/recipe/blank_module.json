@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "minecraft:copper_ingot",
+    "R": "minecraft:redstone"
+  },
+  "pattern": [
+    " I ",
+    "CRC",
+    " I "
+  ],
+  "result": {
+    "id": "jethsportable:blank_module",
+    "count": 2
+  }
+}

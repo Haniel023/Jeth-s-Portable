@@ -14,6 +14,8 @@ import com.jethsportable.data.PortableData;
 import com.jethsportable.data.PortableLink;
 import com.jethsportable.menu.PortableCraftingMenu;
 import com.jethsportable.menu.StorageMenu;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.jethsportable.network.PortablePayloads;
 import com.jethsportable.network.ServerActions;
 import com.jethsportable.registry.PortableRegistry;
@@ -60,6 +62,7 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.phys.AABB;
@@ -115,6 +118,7 @@ public class PortableClientGameTest implements FabricClientGameTest {
 					this.duplicationCheck(ctx, sp);
 					this.chestsTab(ctx, sp);
 					this.machines(ctx, sp);
+					this.modules(ctx, sp);
 					this.levels(ctx, sp);
 					this.breakingTheCore(ctx, sp);
 					this.keepingChunksLoaded(ctx, sp);
@@ -785,6 +789,11 @@ public class PortableClientGameTest implements FabricClientGameTest {
 			blast.setItem(1, new ItemStack(Items.COAL, 2));
 		});
 		this.openStorage(ctx, ServerActions.TAB_MACHINES);
+		ctx.waitTicks(25);
+		boolean hidden = ctx.computeOnClient(mc -> ClientStorage.machines().isEmpty() && !ClientStorage.hasModuleFlag(PortablePayloads.MODULES_FURNACE));
+		this.check("without a Furnace Module the machines tab stays empty", hidden);
+		ctx.takeScreenshot("jp_29_machines_need_module");
+		server.runOnServer(s -> installModules(s, Blocks.FURNACE, Blocks.BREWING_STAND));
 		ctx.waitFor(mc -> !ClientStorage.machines().isEmpty(), 60);
 		this.check("the machines tab lists linked machines (" + ctx.computeOnClient(mc -> ClientStorage.machines().size()) + ")", ctx.computeOnClient(mc -> ClientStorage.machines().size() == 2));
 		ctx.waitTicks(60);
@@ -857,6 +866,255 @@ public class PortableClientGameTest implements FabricClientGameTest {
 		ctx.takeScreenshot("jp_33_no_fuel_toast");
 		server.runOnServer(s -> ((Container)s.overworld().getBlockEntity(BLAST_FURNACE)).setItem(0, ItemStack.EMPTY));
 		ctx.waitTicks(30);
+	}
+
+	private void modules(ClientGameTestContext ctx, TestSingleplayerContext sp) {
+		TestServerContext server = sp.getServer();
+		server.runCommand("tp @a -4 " + Y + " 0");
+		ctx.waitTicks(5);
+
+		// Crafting: Blank Module + station, and back apart.
+		ItemStack stonecutterModule = server.computeOnServer(s -> craft(s, new ItemStack(PortableRegistry.BLANK_MODULE), new ItemStack(Items.STONECUTTER)));
+		this.check("a Blank Module and a stonecutter craft a Stonecutter Module (" + stonecutterModule.getHoverName().getString() + ")",
+			stonecutterModule.is(PortableRegistry.MODULE) && Identifier.withDefaultNamespace("stonecutter").equals(stonecutterModule.get(PortableRegistry.STATION)));
+		List<ItemStack> apart = server.computeOnServer(s -> takeApart(s, stonecutterModule));
+		this.check("a module alone in the grid gives back the Blank Module and the block", apart.get(0).is(PortableRegistry.BLANK_MODULE) && apart.stream().anyMatch(i -> i.is(Items.STONECUTTER)));
+		ItemStack table = server.computeOnServer(s -> craft(s, new ItemStack(PortableRegistry.BLANK_MODULE), new ItemStack(Items.CRAFTING_TABLE)));
+		ItemStack chest = server.computeOnServer(s -> craft(s, new ItemStack(PortableRegistry.BLANK_MODULE), new ItemStack(Items.CHEST)));
+		this.check("crafting tables and chests can't become modules", table.isEmpty() && chest.isEmpty());
+		ItemStack chipped = server.computeOnServer(s -> craft(s, new ItemStack(PortableRegistry.BLANK_MODULE), new ItemStack(Items.CHIPPED_ANVIL)));
+		this.check("a chipped anvil makes a chipped Anvil Module", Integer.valueOf(1).equals(chipped.get(PortableRegistry.MODULE_DAMAGE)));
+
+		// Installing from the cursor, six at most.
+		server.runOnServer(s -> {
+			PortableBase base = base(s);
+			for (int i = 0; i < Modules.SLOTS; i++) base.setModule(i, null);
+			PortableData.get(s).changed(base);
+		});
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		net.minecraft.world.level.block.Block[] stations = {Blocks.STONECUTTER, Blocks.ANVIL, Blocks.ENCHANTING_TABLE, Blocks.GRINDSTONE, Blocks.ENDER_CHEST, Blocks.SMITHING_TABLE};
+		for (int i = 0; i < stations.length; i++) {
+			final var station = stations[i];
+			final int slot = i;
+			server.runOnServer(s -> {
+				StorageMenu menu = (StorageMenu)player(s).containerMenu;
+				menu.setCarried(Modules.create(Modules.stationId(station), 0, null));
+				menu.broadcastChanges();
+			});
+			ctx.waitTicks(2);
+			ctx.runOnClient(mc -> ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(slot, PortablePayloads.MODULE_PLACE)));
+			ctx.waitTicks(3);
+		}
+		int installed = server.computeOnServer(s -> base(s).moduleCount());
+		this.check("modules install from the cursor (" + installed + ")", installed == 6);
+		ctx.waitFor(mc -> ClientStorage.module(5) != null, 40);
+		ctx.waitTicks(3);
+		ctx.takeScreenshot("jp_70_modules");
+		InteractionResult seventh = server.computeOnServer(s -> {
+			ServerPlayer p = player(s);
+			p.closeContainer();
+			ItemStack previous = p.getMainHandItem();
+			p.setItemInHand(InteractionHand.MAIN_HAND, Modules.create(Identifier.withDefaultNamespace("loom"), 0, null));
+			InteractionResult result = p.gameMode.useItemOn(p, p.level(), p.getMainHandItem(), InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(CORE), Direction.UP, CORE, false));
+			p.setItemInHand(InteractionHand.MAIN_HAND, previous);
+			return result;
+		});
+		this.check("a seventh module is refused (" + seventh + ")", server.computeOnServer(s -> base(s).moduleCount()) == 6);
+		ctx.waitTicks(3);
+
+		// Built-in stonecutter: opens, stays open away from any stonecutter, and cuts.
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		this.openModule(ctx, 0);
+		ctx.waitFor(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.StonecutterScreen, 60);
+		server.runCommand("tp @a -16 " + Y + " 6");
+		ctx.waitTicks(40);
+		this.check("the built-in stonecutter opens and stays open", ctx.computeOnClient(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.StonecutterScreen));
+		boolean cut = server.computeOnServer(s -> {
+			ServerPlayer p = player(s);
+			var menu = p.containerMenu;
+			menu.getSlot(0).set(new ItemStack(Items.STONE, 4));
+			menu.slotsChanged(menu.getSlot(0).container);
+			menu.clickMenuButton(p, 0);
+			return !menu.getSlot(1).getItem().isEmpty();
+		});
+		this.check("and it cuts", cut);
+		ctx.takeScreenshot("jp_71_stonecutter_module");
+		ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
+		ctx.waitFor(mc -> mc.gui.screen() instanceof StorageScreen, 60);
+		this.check("closing a module goes back to the window", true);
+		server.runCommand("tp @a -4 " + Y + " 0");
+		ctx.waitTicks(10);
+
+		// Built-in enchanting counts bookshelves around the Core.
+		int bare = this.enchantingCost(ctx, server, 2);
+		server.runCommand("fill 0 " + Y + " -2 4 " + (Y + 1) + " 2 minecraft:bookshelf replace minecraft:air");
+		server.runCommand("fill 1 " + Y + " -1 3 " + (Y + 1) + " 1 minecraft:air replace minecraft:bookshelf");
+		ctx.waitTicks(3);
+		int shelved = this.enchantingCost(ctx, server, 2);
+		this.check("the built-in enchanting table counts bookshelves around the Core (" + bare + " -> " + shelved + ")", bare <= 8 && shelved == 30);
+		server.runCommand("fill 0 " + Y + " -2 4 " + (Y + 1) + " 2 minecraft:air replace minecraft:bookshelf");
+
+		// A linked enchanting table uses its own bookshelves.
+		BlockPos tablePos = new BlockPos(-8, Y, -8);
+		server.runCommand("fill -10 " + Y + " -10 -6 " + (Y + 1) + " -6 minecraft:bookshelf");
+		server.runCommand("fill -9 " + Y + " -9 -7 " + (Y + 1) + " -7 minecraft:air");
+		server.runCommand("setblock -8 " + Y + " -8 minecraft:enchanting_table");
+		ctx.waitTicks(3);
+		InteractionResult linkResult = server.computeOnServer(s -> useWith(s, new ItemStack(PortableRegistry.BLANK_MODULE), tablePos));
+		boolean gotLinked = server.computeOnServer(s -> findModule(player(s), Identifier.withDefaultNamespace("enchanting_table"), true) >= 0);
+		this.check("a Blank Module on a placed enchanting table makes a linked module (" + linkResult + ")", gotLinked);
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		server.runOnServer(s -> {
+			ServerPlayer p = player(s);
+			int index = findModule(p, Identifier.withDefaultNamespace("enchanting_table"), true);
+			((StorageMenu)p.containerMenu).setCarried(p.getInventory().removeItemNoUpdate(index));
+			p.containerMenu.broadcastChanges();
+		});
+		ctx.waitTicks(2);
+		ctx.runOnClient(mc -> ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(2, PortablePayloads.MODULE_PLACE)));
+		ctx.waitTicks(5);
+		boolean swapped = server.computeOnServer(s -> base(s).module(2) != null && base(s).module(2).linked()
+			&& ModuleSlot.of(player(s).containerMenu.getCarried()) != null && !ModuleSlot.of(player(s).containerMenu.getCarried()).linked());
+		this.check("placing onto a used slot swaps the modules", swapped);
+		server.runOnServer(s -> {
+			ServerPlayer p = player(s);
+			p.getInventory().placeItemBackInInventory(p.containerMenu.getCarried().copy(), net.minecraft.util.Prediction.SERVER_ONLY);
+			p.containerMenu.setCarried(ItemStack.EMPTY);
+		});
+		int linkedCost = this.enchantingCost(ctx, server, 2);
+		this.check("the linked enchanting table uses its own bookshelves (" + linkedCost + ")", linkedCost == 30);
+
+		// Built-in anvil: wears down like a placed anvil, then breaks.
+		int toastsBefore = ctx.computeOnClient(mc -> PortableToast.shownForTest);
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		this.openModule(ctx, 1);
+		ctx.waitFor(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AnvilScreen, 60);
+		int[] wear = server.computeOnServer(s -> {
+			ServerPlayer p = player(s);
+			p.giveExperienceLevels(1000);
+			int uses = 0;
+			int sawDamaged = 0;
+			while (uses < 400 && base(s).module(1) != null) {
+				if (!(p.containerMenu instanceof net.minecraft.world.inventory.AnvilMenu anvil)) break;
+				p.getInventory().clearContent();
+				anvil.getSlot(0).set(new ItemStack(Items.IRON_SWORD));
+				anvil.setItemName("Sword " + uses);
+				anvil.clicked(2, 0, ContainerInput.QUICK_MOVE, p);
+				uses++;
+				ModuleSlot module = base(s).module(1);
+				if (module != null && module.damage() == 2) sawDamaged = 1;
+			}
+			return new int[] {uses, sawDamaged, base(s).module(1) == null ? 1 : 0};
+		});
+		this.log("anvil module broke after " + wear[0] + " uses");
+		this.check("the anvil module wears through chipped and damaged, then breaks (" + wear[0] + " uses)", wear[1] == 1 && wear[2] == 1);
+		ctx.waitFor(mc -> !(mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AnvilScreen), 60);
+		int toastsAfter = ctx.computeOnClient(mc -> PortableToast.shownForTest);
+		this.check("it warns when damaged and when it breaks (" + (toastsAfter - toastsBefore) + " pop-ups)", toastsAfter - toastsBefore >= 2);
+		this.closeScreen(ctx);
+		ctx.waitTicks(5);
+
+		// Built-in grindstone: the XP lands on the player, not somewhere at the Core.
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		this.openModule(ctx, 3);
+		ctx.waitFor(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.GrindstoneScreen, 60);
+		int xpBefore = server.computeOnServer(s -> {
+			ServerPlayer p = player(s);
+			p.setExperienceLevels(0);
+			p.setExperiencePoints(0);
+			ItemStack sword = new ItemStack(Items.IRON_SWORD);
+			sword.enchant(s.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT).getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SHARPNESS), 5);
+			p.containerMenu.getSlot(0).set(sword);
+			p.containerMenu.clicked(2, 0, ContainerInput.QUICK_MOVE, p);
+			return p.totalExperience;
+		});
+		ctx.waitTicks(30);
+		int xpAfter = server.computeOnServer(s -> player(s).totalExperience);
+		this.check("the built-in grindstone gives its XP to the player (" + xpBefore + " -> " + xpAfter + ")", xpAfter > xpBefore);
+		this.closeScreen(ctx);
+		ctx.waitTicks(5);
+
+		// Ender chest module.
+		server.runOnServer(s -> player(s).getEnderChestInventory().setItem(0, new ItemStack(Items.DIAMOND, 5)));
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		this.openModule(ctx, 4);
+		ctx.waitFor(mc -> mc.gui.screen() instanceof ContainerScreen, 60);
+		ctx.waitTicks(3);
+		boolean ender = ctx.computeOnClient(mc -> mc.player.containerMenu.getSlot(0).getItem().getCount() == 5 && mc.player.containerMenu.getSlot(0).getItem().is(Items.DIAMOND));
+		this.check("the Ender Chest Module opens your ender chest", ender);
+		this.closeScreen(ctx);
+		ctx.waitTicks(5);
+
+		// A linked block that's gone shows as gone.
+		server.runCommand("setblock -8 " + Y + " -8 minecraft:air");
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		ctx.waitFor(mc -> ClientStorage.module(2) != null && ClientStorage.module(2).state() == PortablePayloads.STATE_MISSING, 60);
+		this.check("a linked module whose block was broken says so", true);
+		ctx.takeScreenshot("jp_72_module_block_gone");
+
+		// Shift-click takes a module out.
+		ctx.runOnClient(mc -> ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(5, PortablePayloads.MODULE_TAKE_TO_INVENTORY)));
+		ctx.waitTicks(5);
+		boolean takenOut = server.computeOnServer(s -> base(s).module(5) == null && findModule(player(s), Identifier.withDefaultNamespace("smithing_table"), false) >= 0);
+		this.check("taking a module out puts it in the inventory", takenOut);
+
+		// A modded station, when the mod is installed. Nemo's Woodcutter opens its screen straight from a
+		// right click instead of declaring it, so it can't be built in, but a placed one can be linked.
+		var woodcutter = BuiltInRegistries.BLOCK.keySet().stream().filter(id -> id.getNamespace().equals("nemos_woodcutter") && id.getPath().endsWith("woodcutter")).findFirst();
+		if (woodcutter.isPresent()) {
+			var block = BuiltInRegistries.BLOCK.getValue(woodcutter.get());
+			ItemStack builtIn = server.computeOnServer(s -> craft(s, new ItemStack(PortableRegistry.BLANK_MODULE), new ItemStack(block)));
+			this.log("woodcutter " + woodcutter.get() + (builtIn.isEmpty() ? " can't be built in" : " crafts into " + builtIn.getHoverName().getString()));
+			BlockPos cutterPos = new BlockPos(-6, Y, 6);
+			server.runCommand("setblock -6 " + Y + " 6 " + woodcutter.get());
+			ctx.waitTicks(3);
+			server.runOnServer(s -> useWith(s, new ItemStack(PortableRegistry.BLANK_MODULE), cutterPos));
+			ctx.waitTicks(3);
+			boolean linked = server.computeOnServer(s -> findModule(player(s), woodcutter.get(), true) >= 0);
+			this.check("a Blank Module links to a placed woodcutter", linked);
+			server.runOnServer(s -> {
+				ServerPlayer p = player(s);
+				base(s).setModule(5, ModuleSlot.of(p.getInventory().getItem(findModule(p, woodcutter.get(), true))));
+				PortableData.get(s).changed(base(s));
+			});
+			server.runCommand("tp @a -16 " + Y + " -6");
+			ctx.waitTicks(10);
+			this.openStorage(ctx, ServerActions.TAB_MODULES);
+			this.openModule(ctx, 5);
+			ctx.waitFor(mc -> mc.gui.screen() != null && !(mc.gui.screen() instanceof StorageScreen), 60);
+			ctx.waitTicks(40);
+			String screen = ctx.computeOnClient(mc -> mc.gui.screen() == null ? "none" : mc.gui.screen().getClass().getSimpleName());
+			this.check("the woodcutter module opens the woodcutter's own screen from afar and stays open (" + screen + ")", screen.contains("Woodcutter"));
+			ctx.takeScreenshot("jp_73_woodcutter_module");
+			this.closeScreen(ctx);
+			server.runCommand("tp @a -4 " + Y + " 0");
+			ctx.waitTicks(5);
+		} else {
+			this.log("Nemo's Woodcutter isn't installed in this run; skipped the modded station check");
+		}
+		this.closeScreen(ctx);
+		ctx.waitTicks(5);
+	}
+
+	/** Opens a module from the Modules tab the way a click does. */
+	private void openModule(ClientGameTestContext ctx, int slot) {
+		ctx.runOnClient(mc -> {
+			com.jethsportable.client.JethsPortableClient.expectRemoteScreen(ServerActions.TAB_MODULES);
+			ClientPlayNetworking.send(new PortablePayloads.ModuleActionPayload(slot, PortablePayloads.MODULE_OPEN));
+		});
+	}
+
+	/** Opens an enchanting module, puts a sword in, and reads the top offer's level cost. */
+	private int enchantingCost(ClientGameTestContext ctx, TestServerContext server, int slot) {
+		this.openStorage(ctx, ServerActions.TAB_MODULES);
+		this.openModule(ctx, slot);
+		ctx.waitFor(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.EnchantmentScreen, 60);
+		server.runOnServer(s -> player(s).containerMenu.getSlot(0).set(new ItemStack(Items.IRON_SWORD)));
+		ctx.waitTicks(5);
+		int cost = server.computeOnServer(s -> ((net.minecraft.world.inventory.EnchantmentMenu)player(s).containerMenu).costs[2]);
+		this.closeScreen(ctx);
+		ctx.waitTicks(5);
+		return cost;
 	}
 
 	private void levels(ClientGameTestContext ctx, TestSingleplayerContext sp) {
@@ -1082,6 +1340,13 @@ public class PortableClientGameTest implements FabricClientGameTest {
 		TestServerContext server = sp.getServer();
 		server.runCommand("clear @a");
 		server.runOnServer(s -> {
+			PortableBase base = base(s);
+			for (int i = 0; i < Modules.SLOTS; i++) base.setModule(i, null);
+			installModules(s, Blocks.FURNACE, Blocks.BREWING_STAND, Blocks.STONECUTTER, Blocks.ENCHANTING_TABLE, Blocks.SMITHING_TABLE, Blocks.ENDER_CHEST);
+			base.setModule(4, ModuleSlot.of(Modules.create(Modules.stationId(Blocks.ANVIL), 1, null)));
+			PortableData.get(s).changed(base);
+		});
+		server.runOnServer(s -> {
 			ServerPlayer p = player(s);
 			var inventory = p.getInventory();
 			inventory.setItem(0, new ItemStack(Items.IRON_PICKAXE));
@@ -1134,6 +1399,10 @@ public class PortableClientGameTest implements FabricClientGameTest {
 		ctx.runOnClient(mc -> ((StorageScreen)mc.gui.screen()).selectTabForTest(ServerActions.TAB_MACHINES));
 		ctx.waitTicks(60);
 		this.galleryShot(ctx, "05_remote_furnaces");
+
+		ctx.runOnClient(mc -> ((StorageScreen)mc.gui.screen()).selectTabForTest(ServerActions.TAB_MODULES));
+		ctx.waitTicks(10);
+		this.galleryShot(ctx, "09_modules");
 
 		ctx.runOnClient(mc -> ((StorageScreen)mc.gui.screen()).selectTabForTest(ServerActions.TAB_BASE));
 		ctx.waitTicks(10);
@@ -1264,6 +1533,8 @@ public class PortableClientGameTest implements FabricClientGameTest {
 				return link == null ? "" : link.name();
 			});
 			this.check("chest names survive a reload (" + name + ")", "Mining stuff".equals(name));
+			int modules = sp.getServer().computeOnServer(s -> base(s).moduleCount());
+			this.check("modules survive a reload (" + modules + ")", modules == 6);
 		}
 	}
 
@@ -1333,6 +1604,22 @@ public class PortableClientGameTest implements FabricClientGameTest {
 			ctx.waitFor(mc -> this.clientCount(Items.GOLD_INGOT) == 69, 60);
 			this.closeScreen(ctx);
 			ctx.waitTicks(5);
+			server.runCommand("give @a jethsportable:module[jethsportable:station=\"minecraft:stonecutter\"]");
+			ctx.waitTicks(5);
+			ctx.runOnClient(mc -> mc.player.getInventory().setSelectedSlot(this.hotbarSlotOf(mc, PortableRegistry.MODULE)));
+			ctx.getInput().lookAt(CORE);
+			ctx.waitTicks(3);
+			ctx.getInput().pressKey(o -> o.keyUse);
+			ctx.waitTicks(10);
+			this.openStorage(ctx, ServerActions.TAB_MODULES);
+			ctx.waitFor(mc -> ClientStorage.module(0) != null, 60);
+			this.check("a module installs with a right click on the Core, over the network", true);
+			this.openModule(ctx, 0);
+			ctx.waitFor(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.StonecutterScreen, 60);
+			ctx.waitTicks(20);
+			this.check("and opens over the network", ctx.computeOnClient(mc -> mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.StonecutterScreen));
+			this.closeScreen(ctx);
+			ctx.waitTicks(5);
 			server.runOnServer(s -> {
 				PortableData data = PortableData.get(s);
 				for (PortableBase base : new ArrayList<>(data.bases())) {
@@ -1384,6 +1671,13 @@ public class PortableClientGameTest implements FabricClientGameTest {
 		return ClientStorage.status().chests();
 	}
 
+	private int hotbarSlotOf(Minecraft mc, Item item) {
+		for (int i = 0; i < 9; i++) {
+			if (mc.player.getInventory().getItem(i).is(item)) return i;
+		}
+		return 0;
+	}
+
 	private int slotHolding(Minecraft mc, Item item) {
 		for (int i = StorageMenu.INV_START; i < StorageMenu.HOTBAR_END; i++) {
 			if (mc.player.containerMenu.getSlot(i).getItem().is(item)) return i;
@@ -1412,6 +1706,54 @@ public class PortableClientGameTest implements FabricClientGameTest {
 		player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(PortableRegistry.PORTABLE_LINK));
 		InteractionResult result = player.gameMode.useItemOn(player, player.level(), player.getMainHandItem(), InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false));
 		player.setItemInHand(InteractionHand.MAIN_HAND, previous);
+		return result;
+	}
+
+	private static InteractionResult useWith(MinecraftServer server, ItemStack stack, BlockPos pos) {
+		ServerPlayer player = player(server);
+		ItemStack previous = player.getMainHandItem();
+		player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+		InteractionResult result = player.gameMode.useItemOn(player, player.level(), player.getMainHandItem(), InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false));
+		if (player.getMainHandItem().isEmpty()) player.setItemInHand(InteractionHand.MAIN_HAND, previous);
+		return result;
+	}
+
+	private static int findModule(ServerPlayer player, Identifier station, boolean linked) {
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+			ModuleSlot module = ModuleSlot.of(player.getInventory().getItem(i));
+			if (module != null && module.station().equals(station) && module.linked() == linked) return i;
+		}
+		return -1;
+	}
+
+	private static void installModules(MinecraftServer server, net.minecraft.world.level.block.Block... stations) {
+		PortableBase base = base(server);
+		for (net.minecraft.world.level.block.Block station : stations) {
+			int slot = base.freeModuleSlot();
+			if (slot >= 0) base.setModule(slot, ModuleSlot.of(Modules.create(Modules.stationId(station), 0, null)));
+		}
+		PortableData.get(server).changed(base);
+	}
+
+	private static net.minecraft.world.item.crafting.CraftingInput grid(ItemStack... items) {
+		List<ItemStack> all = new ArrayList<>(List.of(items));
+		while (all.size() < 9) all.add(ItemStack.EMPTY);
+		return net.minecraft.world.item.crafting.CraftingInput.of(3, 3, all);
+	}
+
+	private static ItemStack craft(MinecraftServer server, ItemStack... items) {
+		var input = grid(items);
+		return server.getRecipeManager().getRecipeFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING, input, server.overworld())
+			.map(recipe -> recipe.value().assemble(input)).orElse(ItemStack.EMPTY);
+	}
+
+	/** The result first, then whatever stays in the grid. */
+	private static List<ItemStack> takeApart(MinecraftServer server, ItemStack module) {
+		var input = grid(module);
+		var recipe = server.getRecipeManager().getRecipeFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING, input, server.overworld()).orElseThrow();
+		List<ItemStack> result = new ArrayList<>();
+		result.add(recipe.value().assemble(input));
+		result.addAll(recipe.value().getRemainingItems(input));
 		return result;
 	}
 

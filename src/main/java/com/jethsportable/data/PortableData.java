@@ -93,6 +93,26 @@ public final class PortableData extends SavedData {
 		return result;
 	}
 
+	/**
+	 * The usable base whose Core is nearest. Its modules are the ones the player gets, so a second
+	 * Core nearby doesn't add six more.
+	 */
+	public @Nullable PortableBase nearestUsable(ServerPlayer player) {
+		PortableBase best = null;
+		double bestDistance = Double.MAX_VALUE;
+		for (PortableBase base : this.usableBy(player)) {
+			GlobalPos core = base.core();
+			double distance = core.dimension().equals(player.level().dimension())
+				? core.pos().distToCenterSqr(player.position())
+				: Double.MAX_VALUE / 2;
+			if (distance < bestDistance) {
+				best = base;
+				bestDistance = distance;
+			}
+		}
+		return best;
+	}
+
 	public @Nullable PortableBase baseOfLink(GlobalPos pos) {
 		return this.linkIndex.get(pos);
 	}

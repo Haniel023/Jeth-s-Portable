@@ -4,7 +4,12 @@ import com.jethsportable.JethsPortable;
 import com.jethsportable.block.PortableCoreBlock;
 import com.jethsportable.data.PortableBase;
 import com.jethsportable.data.PortableData;
+import com.jethsportable.item.BlankModuleItem;
 import com.jethsportable.item.LinkItem;
+import com.jethsportable.item.ModuleItem;
+import com.jethsportable.module.ModuleKind;
+import com.jethsportable.module.ModuleSlot;
+import com.jethsportable.module.Modules;
 import com.jethsportable.registry.PortableRegistry;
 import com.jethsportable.storage.MachineView;
 import net.fabricmc.fabric.api.event.Event;
@@ -55,7 +60,9 @@ public final class LinkHandler {
 
 	private static InteractionResult onUseBlock(Player player, Level level, InteractionHand hand, BlockHitResult hit) {
 		ItemStack stack = player.getItemInHand(hand);
-		if (!(stack.getItem() instanceof LinkItem) || player.isSpectator()) return InteractionResult.PASS;
+		if (player.isSpectator()) return InteractionResult.PASS;
+		if (stack.getItem() instanceof BlankModuleItem || stack.getItem() instanceof ModuleItem) return onModuleUse(player, level, hit, stack);
+		if (!(stack.getItem() instanceof LinkItem)) return InteractionResult.PASS;
 		BlockPos pos = hit.getBlockPos();
 		BlockState state = level.getBlockState(pos);
 		if (state.getBlock() instanceof PortableCoreBlock) return InteractionResult.PASS;
@@ -64,6 +71,71 @@ public final class LinkHandler {
 		}
 		if (level.getBlockEntity(pos) == null) return InteractionResult.PASS;
 		return toggle(serverLevel, serverPlayer, pos, state, stack);
+	}
+
+	/** A Blank Module on a placed station makes a module linked to it; a linked module moves its link. */
+	private static InteractionResult onModuleUse(Player player, Level level, BlockHitResult hit, ItemStack stack) {
+		BlockPos pos = hit.getBlockPos();
+		BlockState state = level.getBlockState(pos);
+		if (state.getBlock() instanceof PortableCoreBlock) return InteractionResult.PASS;
+		boolean linkable = Modules.canLink(level, pos, state);
+		if (!(level instanceof ServerLevel serverLevel) || !(player instanceof ServerPlayer serverPlayer)) {
+			return linkable ? InteractionResult.SUCCESS : InteractionResult.PASS;
+		}
+		if (!linkable) {
+			ModuleKind kind = Modules.kindOf(state.getBlock());
+			if (kind == ModuleKind.FURNACE || kind == ModuleKind.BREWING) {
+				serverPlayer.sendOverlayMessage(Component.translatable("jethsportable.message.module_machine").withStyle(ChatFormatting.RED));
+				return InteractionResult.FAIL;
+			}
+			return InteractionResult.PASS;
+		}
+		if (!serverLevel.mayInteract(serverPlayer, pos)) return InteractionResult.FAIL;
+		GlobalPos globalPos = GlobalPos.of(level.dimension(), pos);
+		Identifier station = Modules.stationId(state.getBlock());
+		Component name = Modules.stationName(station);
+		if (stack.getItem() instanceof BlankModuleItem) {
+			if (Modules.kindOf(state.getBlock()) == ModuleKind.STATION && !Modules.hasMenu(state, level, pos) && !opensOnRightClick(serverLevel, serverPlayer, state, hit)) {
+				return InteractionResult.PASS;
+			}
+			stack.consume(1, serverPlayer);
+			serverPlayer.getInventory().placeItemBackInInventory(Modules.create(station, 0, globalPos), Prediction.SERVER_ONLY);
+			serverPlayer.sendOverlayMessage(Component.translatable("jethsportable.message.module_linked", name).withStyle(ChatFormatting.GREEN));
+			level.playSound(null, pos, SoundEvents.CHAIN_PLACE, SoundSource.BLOCKS, 0.8F, 1.3F);
+			return InteractionResult.SUCCESS;
+		}
+		ModuleSlot module = ModuleSlot.of(stack);
+		if (module == null) return InteractionResult.PASS;
+		if (!module.station().equals(station)) {
+			// Only worth a message on another station; anything else just ignores the click.
+			if (!Modules.hasMenu(state, level, pos)) return InteractionResult.PASS;
+			serverPlayer.sendOverlayMessage(Component.translatable("jethsportable.message.module_wrong_block", Modules.stationName(module.station())).withStyle(ChatFormatting.RED));
+			return InteractionResult.FAIL;
+		}
+		if (!module.linked()) {
+			serverPlayer.sendOverlayMessage(Component.translatable("jethsportable.message.module_built_in", Modules.stationName(module.station())).withStyle(ChatFormatting.RED));
+			return InteractionResult.FAIL;
+		}
+		stack.set(PortableRegistry.MODULE_LINK, globalPos);
+		serverPlayer.sendOverlayMessage(Component.translatable("jethsportable.message.module_relinked", name).withStyle(ChatFormatting.GREEN));
+		level.playSound(null, pos, SoundEvents.CHAIN_PLACE, SoundSource.BLOCKS, 0.8F, 1.3F);
+		return InteractionResult.SUCCESS;
+	}
+
+	/**
+	 * Right clicks the block for the player, as vanilla would have anyway, and reports whether a menu
+	 * opened. That menu is closed again: the player was linking, not using the block.
+	 */
+	private static boolean opensOnRightClick(ServerLevel level, ServerPlayer player, BlockState state, BlockHitResult hit) {
+		int before = player.containerMenu.containerId;
+		try {
+			state.useWithoutItem(level, player, hit);
+		} catch (RuntimeException e) {
+			return false;
+		}
+		boolean opened = player.containerMenu != player.inventoryMenu && player.containerMenu.containerId != before;
+		if (opened) player.closeContainer();
+		return opened;
 	}
 
 	private static InteractionResult toggle(ServerLevel level, ServerPlayer player, BlockPos clicked, BlockState state, ItemStack stack) {
@@ -87,7 +159,8 @@ public final class LinkHandler {
 
 		BlockEntity blockEntity = level.getBlockEntity(pos);
 		if (!canLink(level, pos, state, blockEntity)) {
-			player.sendOverlayMessage(Component.translatable("jethsportable.message.not_linkable").withStyle(ChatFormatting.RED));
+			String key = Modules.canLink(level, pos, state) ? "jethsportable.message.use_blank_module" : "jethsportable.message.not_linkable";
+			player.sendOverlayMessage(Component.translatable(key).withStyle(ChatFormatting.RED));
 			return InteractionResult.FAIL;
 		}
 		if (blockEntity instanceof BaseContainerBlockEntity container && !container.canOpen(player)) {
